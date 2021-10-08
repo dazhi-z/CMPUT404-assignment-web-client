@@ -31,14 +31,12 @@ class HTTPResponse(object):
     def __init__(self, code=200, body=""):
         self.code = code
         self.body = body
-        
 
 class HTTPClient(object):
-    #get the hostname from a given url
-    def getHost(self,  url):
-        data = urllib.parse.urlparse(url)
-        return data.hostname
-    
+    def get_host(self,url):
+        host = urllib.parse.urlparse(url).hostname
+        return host
+
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
@@ -46,26 +44,22 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        code = data[0].split(' ')[1]
-        return int(code) 
+        status_code = data[0].split(' ')[1]
+        return int(status_code)
 
     def get_headers(self,data):
         headers = data.split("\r\n")
         return headers
 
     def get_body(self, data):
-        body = data.split('\r\n')[-1]
+        body = data.split("\r\n")[-1]
         return body
-
-    #send the request
+    
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
-        return self.recvall(self.socket)
         
-    #close the connection
     def close(self):
         self.socket.close()
-
 
     # read everything from the socket
     def recvall(self, sock):
@@ -79,80 +73,78 @@ class HTTPClient(object):
                 else:
                     done = not part
         except socket.timeout:
-            print("TimeOut")
+            print("timeout")
         return buffer.decode('utf-8')
 
-
     def GET(self, url, args=None):
-        #divide the url into components
-        urlLine = urllib.parse.urlparse(url)
-        if urlLine.port:
-            urlPort = urlLine.port
-        else:
-            #if the port does not exists, set it as default
-            urlPort = 80
-        
-        self.connect(self.getHost(url),urlPort)
+        #parse the given url
+        parse_url = urllib.parse.urlparse(url)
 
-        if urlLine.path:
-            urlPath = urlLine.path
+        if parse_url.port:
+            port = parse_url.port
         else:
-            # if there is no path, set it as '/'
-            urlPath = '/'
+            #if the port does not exist, set it as default
+            port= 80
+        
+        self.connect(self.get_host(url),port)
+
+        if parse_url.path:
+            url_path = parse_url.path
+        else:
+            #if there is no path, set the path as '/'
+            url_path = '/'
 
         #the GET request
-        get_message = """GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n""".format(path=urlPath,  host=self.getHost(url))
+        get_request = """GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n""".format(path=url_path,  host=self.get_host(url))
 
         #send the request and get the response
-        urlData = self.sendall(get_message) 
-        urlHeader = self.get_headers(urlData)
-        code = self.get_code(urlHeader)
+        self.sendall(get_request)
+        body = self.recvall(self.socket)
+        headers = self.get_headers(body)
+        status_code = self.get_code(headers)
 
+        #close the connection
         self.close()
 
-        return HTTPResponse(code,urlData)
+        return HTTPResponse(status_code, body)
 
-        
-
-        
     def POST(self, url, args=None):
-        urlBody = " "
-        urlLine = urllib.parse.urlparse(url)
+        parse_url = urllib.parse.urlparse(url)
 
-        if urlLine.port:
-            urlPort = urlLine.port
+        if parse_url.port:
+            url_port = parse_url.port
         else:
-            urlPort = 80
-        self.connect(socket.gethostbyname(urlLine.hostname),urlPort)
-
-        if args != None:
-            urlBody = urllib.parse.urlencode(args)
-        else:
-            urlBody = ""
-
-        if urlLine.path:
-            urlPath = urlLine.path
-        else:
-            urlPath = '/'
+            url_port = 80
         
-        urlLen = len(urlBody)
+        self.connect(self.get_host(url),url_port)
 
-        self.connect(self.getHost(url), urlPort)
+        if parse_url.path:
+            url_path = parse_url.path
+        else:
+            url_path = '/'
+
+        #encode args in url format
+        if args != None:
+            url_body = urllib.parse.urlencode(args)
+        else:
+            url_body = ""
+
+        
 
         #the POST request
-        #the Content-Type asked to handle
-        post_message = """POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {length}\r\n\r\n{data}""".format(path=urlPath,  data=urlBody,  length=urlLen,  host=self.getHost(url))
+        #Content-Type asked to handle
+        post_request = """POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {length}\r\n\r\n{data}""".format(path=url_path,  data=url_body,  length=len(url_body),  host=self.get_host(url))
 
-        #send the request and get the response
-        urlData = self.sendall(post_message)
-        urlHeaders = self.get_headers(urlData)
-        code = self.get_code(urlHeaders)
-        body = urlHeaders[-1] #the body of the response
-        
+        self.sendall(post_request)
+        data = self.recvall(self.socket)
+        headers = self.get_headers(data)
+        status_code = self.get_code(headers)
+        body = headers[-1]
+
         self.close()
-        return HTTPResponse(code,body)
-
         
+        return HTTPResponse(status_code, body)
+
     def command(self, url, command="GET", args=None):
         if (command == "POST"):
             return self.POST( url, args )
